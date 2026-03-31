@@ -48,7 +48,9 @@ class UserPhoto(Base):
     color_id = Column(Integer, ForeignKey("colors.id"), index=True, nullable=False)
     file_path = Column(String, nullable=False)
     match_percentage = Column(Float, nullable=False)
-    description = Column(String, nullable=True)  # New column for AI description
+    description = Column(String, nullable=True)
+    description_status = Column(String, nullable=False, default="pending")
+    description_error = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     user = relationship("User", back_populates="photos")

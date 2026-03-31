@@ -1,19 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import func
 from sqlalchemy import func as sqla_func
 from typing import List, Optional
 import uuid
 from datetime import date
-from typing import List
-
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 import schemas
 from data import model
-from data.database import get_db
+from data.database import get_db, SessionLocal
 from utils.image_processing import detect_color_in_image
 from utils.auth import get_current_user
 from utils.vllm_client import generate_image_description
@@ -25,6 +23,30 @@ router = APIRouter(
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+def generate_description_task(photo_id: int, file_path: str, color_name: str):
+    db = SessionLocal()
+    try:
+        photo = db.query(model.UserPhoto).filter(model.UserPhoto.id == photo_id).first()
+        if not photo:
+            return
+        description = generate_image_description(file_path, color_name)
+        if description:
+            photo.description = description
+            photo.description_status = "completed"
+            photo.description_error = None
+        else:
+            photo.description_status = "failed"
+            photo.description_error = "描述生成失败"
+        db.commit()
+    except Exception as exc:
+        photo = db.query(model.UserPhoto).filter(model.UserPhoto.id == photo_id).first()
+        if photo:
+            photo.description_status = "failed"
+            photo.description_error = str(exc)
+            db.commit()
+    finally:
+        db.close()
 
 @router.get("/", response_model=schemas.ColorPaginatedResponse)
 def get_colors(
@@ -160,6 +182,48 @@ def get_today_drawn_colors(
     colors = db.query(model.Color).filter(model.Color.id.in_(color_ids)).all()
     return colors
 
+@router.get("/my/spectrum", response_model=schemas.SpectrumResponse)
+def get_my_spectrum(
+    db: Session = Depends(get_db),
+    current_user: model.User = Depends(get_current_user)
+):
+    rows = db.query(
+        model.Color,
+        sqla_func.count(model.UserPhoto.id).label("photo_count"),
+        sqla_func.min(model.UserPhoto.created_at).label("first_checkin_at"),
+        sqla_func.max(model.UserPhoto.created_at).label("last_checkin_at")
+    ).join(
+        model.UserPhoto, model.UserPhoto.color_id == model.Color.id
+    ).filter(
+        model.UserPhoto.user_id == current_user.id
+    ).group_by(
+        model.Color.id
+    ).order_by(
+        sqla_func.count(model.UserPhoto.id).desc(),
+        sqla_func.max(model.UserPhoto.created_at).desc()
+    ).all()
+
+    total_photos = db.query(sqla_func.count(model.UserPhoto.id)).filter(
+        model.UserPhoto.user_id == current_user.id
+    ).scalar() or 0
+
+    items = []
+    for color, photo_count, first_checkin_at, last_checkin_at in rows:
+        color_dict = color.__dict__.copy()
+        color_dict["photo_count"] = photo_count
+        items.append({
+            "color": color_dict,
+            "photo_count": photo_count,
+            "first_checkin_at": first_checkin_at,
+            "last_checkin_at": last_checkin_at
+        })
+
+    return {
+        "total_colors_checked": len(rows),
+        "total_photos": total_photos,
+        "items": items
+    }
+
 @router.get("/public/{color_id}", response_model=schemas.ColorResponse)
 def get_public_color(
     color_id: int,
@@ -225,61 +289,65 @@ def get_daily_recommendation(
 @router.post("/detect", response_model=schemas.MultipleColorDetectionResponse)
 async def detect_color(
     color_id: int = Form(...),
-    tolerance: int = Form(60),  # Increased default tolerance from 30 to 60
+    tolerance: int = Form(60),
+    crop_x: Optional[float] = Form(None),
+    crop_y: Optional[float] = Form(None),
+    crop_w: Optional[float] = Form(None),
+    crop_h: Optional[float] = Form(None),
     files: List[UploadFile] = File(...),
+    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
     current_user: model.User = Depends(get_current_user)
 ):
-    # Verify the color exists
     color = db.query(model.Color).filter(model.Color.id == color_id).first()
     if not color:
         raise HTTPException(status_code=404, detail="Color not found")
-        
+
     results = []
-    
+
     for file in files:
-        # Verify file type
         if not file.content_type.startswith("image/"):
-            continue # Skip non-image files
-            
+            continue
+
         try:
-            # Read image bytes
             image_bytes = await file.read()
-            
-            # Detect color in image
-            result = detect_color_in_image(image_bytes, color.hex_code, tolerance)
-            
+            result = detect_color_in_image(
+                image_bytes,
+                color.hex_code,
+                tolerance,
+                crop_x=crop_x,
+                crop_y=crop_y,
+                crop_w=crop_w,
+                crop_h=crop_h
+            )
+
             saved = False
-            # Threshold matches frontend: 1.0%
+            description = None
             if result["percentage"] >= 1.0:
-                # Save the image to disk
                 file_ext = os.path.splitext(file.filename)[1]
                 if not file_ext:
                     file_ext = ".jpg"
-                    
+
                 unique_filename = f"{uuid.uuid4().hex}{file_ext}"
                 file_path = os.path.join(UPLOAD_DIR, unique_filename)
-                
+
                 with open(file_path, "wb") as f:
                     f.write(image_bytes)
-                
-                # Save record to database
+
                 relative_path = f"/uploads/{unique_filename}"
                 new_photo = model.UserPhoto(
                     user_id=current_user.id,
                     color_id=color.id,
                     file_path=relative_path,
-                    match_percentage=result["percentage"]
+                    match_percentage=result["percentage"],
+                    description_status="pending"
                 )
                 db.add(new_photo)
-                
-                # Automatically generate description via vLLM
-                description = generate_image_description(file_path, color.name)
-                if description:
-                    new_photo.description = description
-                
+                db.flush()
+                if background_tasks is not None:
+                    background_tasks.add_task(generate_description_task, new_photo.id, file_path, color.name)
                 saved = True
-            
+
             results.append({
                 "color": color,
                 "found": result["percentage"] >= 1.0,
@@ -287,18 +355,20 @@ async def detect_color(
                 "matching_pixels": result["matching_pixels"],
                 "total_pixels": result["total_pixels"],
                 "saved": saved,
-                "description": description if saved else None
+                "description": description,
+                "matched_by": result["matched_by"],
+                "failure_reasons": result["failure_reasons"] if not saved else []
             })
-            
+
         except Exception as e:
             print(f"Error processing file {file.filename}: {e}")
             continue
-            
+
     db.commit()
-            
+
     if not results:
         raise HTTPException(status_code=400, detail="No valid images processed")
-        
+
     return {"results": results}
 
 @router.get("/{color_id}/photos", response_model=List[schemas.UserPhotoResponse])
@@ -311,12 +381,25 @@ def get_user_color_photos(
         model.UserPhoto.user_id == current_user.id,
         model.UserPhoto.color_id == color_id
     ).order_by(model.UserPhoto.created_at.desc()).all()
-    
-    return photos
+
+    data = []
+    for photo in photos:
+        data.append({
+            "id": photo.id,
+            "color_id": photo.color_id,
+            "file_path": photo.file_path,
+            "match_percentage": photo.match_percentage,
+            "description": photo.description,
+            "description_status": photo.description_status or "pending",
+            "description_error": photo.description_error,
+            "created_at": photo.created_at
+        })
+    return data
 
 @router.post("/photos/{photo_id}/analyze")
 def analyze_user_photo(
     photo_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: model.User = Depends(get_current_user)
 ):
@@ -332,22 +415,15 @@ def analyze_user_photo(
     if not color:
         raise HTTPException(status_code=404, detail="Associated color not found")
         
-    # Get absolute path
     file_path_on_disk = os.path.join(os.path.dirname(os.path.dirname(__file__)), photo.file_path.lstrip('/'))
     if not os.path.exists(file_path_on_disk):
         raise HTTPException(status_code=404, detail="Image file not found on server")
-        
-    # Generate description
-    description = generate_image_description(file_path_on_disk, color.name)
-    if not description:
-        raise HTTPException(status_code=500, detail="Failed to generate image description")
-        
-    # Update database
-    photo.description = description
+
+    photo.description_status = "pending"
+    photo.description_error = None
     db.commit()
-    db.refresh(photo)
-    
-    return {"message": "Analysis complete", "description": description}
+    background_tasks.add_task(generate_description_task, photo.id, file_path_on_disk, color.name)
+    return {"message": "Analysis queued", "status": "pending"}
 
 @router.delete("/photos/{photo_id}")
 def delete_user_photo(
@@ -374,4 +450,3 @@ def delete_user_photo(
     db.delete(photo)
     db.commit()
     return {"message": "Photo deleted successfully"}
-

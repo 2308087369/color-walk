@@ -123,23 +123,85 @@ export default function ColorsPage() {
   const handleAnalyzePhoto = async (photoId: number) => {
     setAnalyzingPhotoId(photoId);
     try {
-      const response = await analyzePhoto(photoId);
-      
-      // Update local state with the new description
+      await analyzePhoto(photoId);
       setColorPhotos(prev => prev.map(p => 
-        p.id === photoId ? { ...p, description: response.description } : p
+        p.id === photoId ? { ...p, description_status: "pending", description_error: undefined } : p
       ));
-      
-      // Also update preview photo if it's currently open
       if (previewPhoto?.id === photoId) {
-        setPreviewPhoto(prev => prev ? { ...prev, description: response.description } : null);
+        setPreviewPhoto(prev => prev ? { ...prev, description_status: "pending", description_error: undefined } : null);
+      }
+      if (selectedColor) {
+        let attempts = 0;
+        const timer = setInterval(async () => {
+          attempts += 1;
+          const latestPhotos = await getColorPhotos(selectedColor.id);
+          setColorPhotos(latestPhotos);
+          const latest = latestPhotos.find((p) => p.id === photoId);
+          if (latest && previewPhoto?.id === photoId) {
+            setPreviewPhoto(latest);
+          }
+          if (attempts >= 15 || (latest && latest.description_status !== "pending")) {
+            clearInterval(timer);
+            setAnalyzingPhotoId(null);
+          }
+        }, 1500);
       }
     } catch (error) {
       console.error("Failed to analyze photo:", error);
       alert("生成描述失败，请稍后重试");
-    } finally {
       setAnalyzingPhotoId(null);
     }
+  };
+
+  const handleGeneratePoster = async (photo: UserPhoto, color: Color | null) => {
+    if (!color) {
+      return;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = 1080;
+    canvas.height = 1920;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      return;
+    }
+    ctx.fillStyle = "#0b0b0b";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const imageUrl = `${process.env.NEXT_PUBLIC_API_URL || "http://180.213.184.159:5120"}${photo.file_path}`;
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.src = imageUrl;
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("图片加载失败"));
+    });
+
+    const imageAreaX = 80;
+    const imageAreaY = 140;
+    const imageAreaW = 920;
+    const imageAreaH = 1100;
+    ctx.drawImage(image, imageAreaX, imageAreaY, imageAreaW, imageAreaH);
+
+    ctx.fillStyle = color.hex_code;
+    ctx.fillRect(80, 1280, 920, 180);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 54px sans-serif";
+    ctx.fillText(`${color.name} ${color.hex_code.toUpperCase()}`, 120, 1385);
+    ctx.font = "36px sans-serif";
+    const description = photo.description || "今日打卡完成，记录属于我的传统色瞬间。";
+    const lines = description.match(/.{1,18}/g) || [];
+    lines.slice(0, 3).forEach((line, idx) => {
+      ctx.fillText(line, 120, 1545 + idx * 52);
+    });
+    ctx.font = "30px sans-serif";
+    ctx.fillStyle = "#c8c8c8";
+    ctx.fillText("ColorWalk 色彩之城", 120, 1770);
+    const link = document.createElement("a");
+    link.href = canvas.toDataURL("image/png");
+    link.download = `poster-${color.name}-${photo.id}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleDownloadPhoto = async (photoUrl: string, filename: string) => {
@@ -381,31 +443,39 @@ export default function ColorsPage() {
                     </p>
                     <div className="flex items-center justify-between mt-1">
                       <div className="text-white/50 text-xs">
-                        匹配度 {previewPhoto.match_percentage.toFixed(1)}% · 打卡于 {new Date(previewPhoto.created_at).toLocaleString()}
+                        匹配度 {previewPhoto.match_percentage.toFixed(1)}% · 打卡于 {new Date(previewPhoto.created_at).toLocaleString()} · {previewPhoto.description_status === "pending" ? "描述生成中" : "描述已完成"}
                       </div>
-                      <button
-                        onClick={() => handleAnalyzePhoto(previewPhoto.id)}
-                        disabled={analyzingPhotoId === previewPhoto.id}
-                        className="text-xs flex items-center gap-1.5 text-white/70 hover:text-white transition-colors disabled:opacity-50"
-                      >
-                        {analyzingPhotoId === previewPhoto.id ? (
-                          <>
-                            <Spinner className="h-3 w-3" />
-                            生成中...
-                          </>
-                        ) : (
-                          <>
-                            <RefreshCw className="h-3 w-3" />
-                            重新生成
-                          </>
-                        )}
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => handleGeneratePoster(previewPhoto, selectedColor)}
+                          className="text-xs flex items-center gap-1.5 text-white/70 hover:text-white transition-colors"
+                        >
+                          海报分享
+                        </button>
+                        <button
+                          onClick={() => handleAnalyzePhoto(previewPhoto.id)}
+                          disabled={analyzingPhotoId === previewPhoto.id}
+                          className="text-xs flex items-center gap-1.5 text-white/70 hover:text-white transition-colors disabled:opacity-50"
+                        >
+                          {analyzingPhotoId === previewPhoto.id ? (
+                            <>
+                              <Spinner className="h-3 w-3" />
+                              生成中...
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw className="h-3 w-3" />
+                              重新生成
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </>
                 ) : (
                   <div className="flex items-center justify-between">
                     <div className="text-white/50 text-sm">
-                      匹配度 {previewPhoto.match_percentage.toFixed(1)}% · 尚未生成 AI 描述
+                      匹配度 {previewPhoto.match_percentage.toFixed(1)}% · {previewPhoto.description_status === "pending" ? "AI 描述生成中..." : "尚未生成 AI 描述"}
                     </div>
                     <button
                       onClick={() => handleAnalyzePhoto(previewPhoto.id)}

@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func as sqla_func
 from fastapi.security import OAuth2PasswordRequestForm
+from datetime import date, timedelta
 
 import sys
 import os
@@ -58,3 +60,67 @@ def update_user_me(
         db.commit()
         db.refresh(current_user)
     return current_user
+
+@router.get("/achievements", response_model=schemas.AchievementResponse)
+def get_achievements(
+    db: Session = Depends(get_db),
+    current_user: model.User = Depends(auth.get_current_user)
+):
+    total_photos = db.query(sqla_func.count(model.UserPhoto.id)).filter(
+        model.UserPhoto.user_id == current_user.id
+    ).scalar() or 0
+    total_colors = db.query(sqla_func.count(sqla_func.distinct(model.UserPhoto.color_id))).filter(
+        model.UserPhoto.user_id == current_user.id
+    ).scalar() or 0
+
+    draw_dates = db.query(model.UserDrawnColor.date).filter(
+        model.UserDrawnColor.user_id == current_user.id
+    ).distinct().all()
+    draw_date_set = {row[0] for row in draw_dates}
+
+    streak = 0
+    cursor = date.today()
+    while cursor in draw_date_set:
+        streak += 1
+        cursor -= timedelta(days=1)
+
+    items = [
+        {
+            "key": "first_checkin",
+            "title": "完成首次打卡",
+            "achieved": total_photos >= 1,
+            "progress": min(total_photos, 1),
+            "target": 1
+        },
+        {
+            "key": "collector_10",
+            "title": "解锁10种颜色",
+            "achieved": total_colors >= 10,
+            "progress": min(total_colors, 10),
+            "target": 10
+        },
+        {
+            "key": "collector_30",
+            "title": "解锁30种颜色",
+            "achieved": total_colors >= 30,
+            "progress": min(total_colors, 30),
+            "target": 30
+        },
+        {
+            "key": "streak_3",
+            "title": "连续抽色3天",
+            "achieved": streak >= 3,
+            "progress": min(streak, 3),
+            "target": 3
+        },
+        {
+            "key": "streak_7",
+            "title": "连续抽色7天",
+            "achieved": streak >= 7,
+            "progress": min(streak, 7),
+            "target": 7
+        }
+    ]
+
+    total_achieved = len([item for item in items if item["achieved"]])
+    return {"total_achieved": total_achieved, "items": items}

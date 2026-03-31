@@ -5,9 +5,23 @@ from data.database import engine
 from data import model
 from routers import users, colors
 import os
+from sqlalchemy import text
 
 # Create all tables in the database
 model.Base.metadata.create_all(bind=engine)
+
+def ensure_schema_updates():
+    with engine.begin() as conn:
+        columns = conn.execute(text("PRAGMA table_info(user_photos)")).fetchall()
+        names = {row[1] for row in columns}
+        if "description" not in names:
+            conn.execute(text("ALTER TABLE user_photos ADD COLUMN description VARCHAR"))
+        if "description_status" not in names:
+            conn.execute(text("ALTER TABLE user_photos ADD COLUMN description_status VARCHAR DEFAULT 'pending'"))
+        if "description_error" not in names:
+            conn.execute(text("ALTER TABLE user_photos ADD COLUMN description_error VARCHAR"))
+
+ensure_schema_updates()
 
 app = FastAPI(title="Color City API")
 

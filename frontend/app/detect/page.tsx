@@ -1,15 +1,15 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, Suspense } from "react";
+import { useState, useRef, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { BottomNav } from "@/components/bottom-nav";
 import { ColorPickerModal } from "@/components/color-picker-modal";
-import { detectColor, getTodayDrawnColors, type Color, type MultipleColorDetectionResponse, type DetectionResult } from "@/lib/api";
+import { detectColor, getTodayDrawnColors, type Color, type DetectionResult } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { Slider } from "@/components/ui/slider";
 import {
-  Camera,
   Upload,
   X,
   ChevronDown,
@@ -27,6 +27,10 @@ function DetectPageContent() {
   const [detecting, setDetecting] = useState(false);
   const [results, setResults] = useState<DetectionResult[] | null>(null);
   const [todayDrawnColors, setTodayDrawnColors] = useState<Color[]>([]);
+  const [cropEnabled, setCropEnabled] = useState(false);
+  const [cropScale, setCropScale] = useState(70);
+  const [cropOffsetX, setCropOffsetX] = useState(50);
+  const [cropOffsetY, setCropOffsetY] = useState(50);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -105,8 +109,13 @@ function DetectPageContent() {
 
     setDetecting(true);
     try {
-      // 提高 tolerance 到 60，使得打卡更容易
-      const response = await detectColor(imageFiles, selectedColor.id, 60);
+      const crop = cropEnabled ? {
+        x: Math.max(0, Math.min((cropOffsetX - cropScale / 2) / 100, 1)),
+        y: Math.max(0, Math.min((cropOffsetY - cropScale / 2) / 100, 1)),
+        w: Math.max(0.1, Math.min(cropScale / 100, 1)),
+        h: Math.max(0.1, Math.min(cropScale / 100, 1))
+      } : undefined;
+      const response = await detectColor(imageFiles, selectedColor.id, 60, crop);
       setResults(response.results);
     } catch (error) {
       console.error("[v0] 颜色检测失败:", error);
@@ -197,7 +206,32 @@ function DetectPageContent() {
 
         {/* 图片预览 */}
         {imagePreviews.length > 0 && (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between rounded-xl border border-border px-3 py-2">
+              <div className="text-sm font-medium">局部裁剪识色</div>
+              <button
+                onClick={() => setCropEnabled((prev) => !prev)}
+                className={cn(
+                  "rounded-full px-3 py-1 text-xs transition-colors",
+                  cropEnabled ? "bg-foreground text-background" : "bg-muted text-muted-foreground"
+                )}
+              >
+                {cropEnabled ? "已开启" : "已关闭"}
+              </button>
+            </div>
+
+            {cropEnabled && (
+              <div className="rounded-xl border border-border p-3 space-y-3">
+                <div className="text-xs text-muted-foreground">裁剪大小</div>
+                <Slider value={[cropScale]} min={30} max={100} step={1} onValueChange={(v) => setCropScale(v[0])} />
+                <div className="text-xs text-muted-foreground">水平位置</div>
+                <Slider value={[cropOffsetX]} min={0} max={100} step={1} onValueChange={(v) => setCropOffsetX(v[0])} />
+                <div className="text-xs text-muted-foreground">垂直位置</div>
+                <Slider value={[cropOffsetY]} min={0} max={100} step={1} onValueChange={(v) => setCropOffsetY(v[0])} />
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
             {imagePreviews.map((preview, index) => (
               <div key={index} className="relative rounded-2xl overflow-hidden bg-muted aspect-square">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -206,6 +240,18 @@ function DetectPageContent() {
                   alt={`预览图片 ${index + 1}`}
                   className="w-full h-full object-cover"
                 />
+                {cropEnabled && (
+                  <div
+                    className="absolute border-2 border-primary/80 bg-primary/10"
+                    style={{
+                      left: `${Math.max(0, cropOffsetX - cropScale / 2)}%`,
+                      top: `${Math.max(0, cropOffsetY - cropScale / 2)}%`,
+                      width: `${cropScale}%`,
+                      height: `${cropScale}%`,
+                      transform: "translate(0, 0)"
+                    }}
+                  />
+                )}
                 <button
                   onClick={() => clearImage(index)}
                   className="absolute top-2 right-2 h-6 w-6 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center"
@@ -226,6 +272,7 @@ function DetectPageContent() {
                 className="hidden"
               />
             </label>
+            </div>
           </div>
         )}
 
@@ -305,6 +352,9 @@ function DetectPageContent() {
                       </div>
                       <div className="text-xs text-muted-foreground flex flex-wrap gap-3">
                         <span>匹配度: {result.percentage.toFixed(1)}%</span>
+                        {!!result.matched_by?.length && (
+                          <span>命中模型: {result.matched_by.join(" / ").toUpperCase()}</span>
+                        )}
                         {result.saved && <span className="text-emerald-500">已保存至色卡</span>}
                       </div>
                     </div>
@@ -312,6 +362,11 @@ function DetectPageContent() {
                   {result.saved && result.description && (
                     <div className="text-sm bg-background/50 p-3 rounded-xl text-muted-foreground border border-border/50">
                       ✨ {result.description}
+                    </div>
+                  )}
+                  {!result.saved && !!result.failure_reasons?.length && (
+                    <div className="text-sm bg-background/50 p-3 rounded-xl text-muted-foreground border border-border/50">
+                      失败原因：{result.failure_reasons.join("、")}
                     </div>
                   )}
                 </div>

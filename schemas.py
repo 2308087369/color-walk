@@ -62,6 +62,8 @@ class ColorDetectionResponse(BaseModel):
     total_pixels: int
     saved: bool = False
     description: Optional[str] = None
+    matched_by: List[str] = []
+    failure_reasons: List[str] = []
 
 class MultipleColorDetectionResponse(BaseModel):
     results: List[ColorDetectionResponse]
@@ -72,6 +74,8 @@ class UserPhotoResponse(BaseModel):
     file_path: str
     match_percentage: float
     description: Optional[str] = None
+    description_status: str
+    description_error: Optional[str] = None
     created_at: datetime
     
     class Config:
@@ -81,4 +85,25 @@ class DailyRecommendationResponse(BaseModel):
     date: str
     colors: List[ColorResponse]
 
+class SpectrumItem(BaseModel):
+    color: ColorResponse
+    photo_count: int
+    first_checkin_at: datetime
+    last_checkin_at: datetime
+
+class SpectrumResponse(BaseModel):
+    total_colors_checked: int
+    total_photos: int
+    items: List[SpectrumItem]
+
+class AchievementItem(BaseModel):
+    key: str
+    title: str
+    achieved: bool
+    progress: int
+    target: int
+
+class AchievementResponse(BaseModel):
+    total_achieved: int
+    items: List[AchievementItem]
 

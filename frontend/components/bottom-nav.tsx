@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Palette, Sparkles, Camera, Home } from "lucide-react";
+import { Palette, Sparkles, Camera, Home, Trophy } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "首页", icon: Home },
   { href: "/colors", label: "色卡", icon: Palette },
   { href: "/draw", label: "抽色", icon: Sparkles },
   { href: "/detect", label: "识色", icon: Camera },
+  { href: "/profile", label: "色谱", icon: Trophy },
 ];
 
 export function BottomNav() {
