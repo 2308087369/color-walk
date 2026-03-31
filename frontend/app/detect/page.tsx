@@ -8,7 +8,6 @@ import { detectColor, getTodayDrawnColors, type Color, type DetectionResult } fr
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { Slider } from "@/components/ui/slider";
 import {
   Upload,
   X,
@@ -17,6 +16,13 @@ import {
   RefreshCw,
   Sparkles,
 } from "lucide-react";
+
+type CropRect = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
 
 function DetectPageContent() {
   const searchParams = useSearchParams();
@@ -28,11 +34,12 @@ function DetectPageContent() {
   const [results, setResults] = useState<DetectionResult[] | null>(null);
   const [todayDrawnColors, setTodayDrawnColors] = useState<Color[]>([]);
   const [cropEnabled, setCropEnabled] = useState(false);
-  const [cropScale, setCropScale] = useState(70);
-  const [cropOffsetX, setCropOffsetX] = useState(50);
-  const [cropOffsetY, setCropOffsetY] = useState(50);
+  const [cropRect, setCropRect] = useState<CropRect | null>(null);
+  const [draftCrop, setDraftCrop] = useState<CropRect | null>(null);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cropBoardRef = useRef<HTMLDivElement>(null);
 
   // 从 URL 参数获取颜色
   useEffect(() => {
@@ -74,6 +81,9 @@ function DetectPageContent() {
       const newPreviews = files.map(file => URL.createObjectURL(file));
       setImagePreviews(prev => [...prev, ...newPreviews]);
       setResults(null);
+      setCropRect(null);
+      setDraftCrop(null);
+      setDragStart(null);
     }
   };
 
@@ -87,6 +97,9 @@ function DetectPageContent() {
       return newPreviews;
     });
     setResults(null);
+    setCropRect(null);
+    setDraftCrop(null);
+    setDragStart(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -98,9 +111,52 @@ function DetectPageContent() {
     imagePreviews.forEach(preview => URL.revokeObjectURL(preview));
     setImagePreviews([]);
     setResults(null);
+    setCropRect(null);
+    setDraftCrop(null);
+    setDragStart(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
+  };
+
+  const getPoint = (clientX: number, clientY: number) => {
+    if (!cropBoardRef.current) return null;
+    const rect = cropBoardRef.current.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const x = Math.max(0, Math.min((clientX - rect.left) / rect.width, 1));
+    const y = Math.max(0, Math.min((clientY - rect.top) / rect.height, 1));
+    return { x, y };
+  };
+
+  const handleCropMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!cropEnabled) return;
+    const point = getPoint(e.clientX, e.clientY);
+    if (!point) return;
+    setDragStart(point);
+    setDraftCrop({ x: point.x, y: point.y, w: 0, h: 0 });
+  };
+
+  const handleCropMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!dragStart) return;
+    const point = getPoint(e.clientX, e.clientY);
+    if (!point) return;
+    const x = Math.min(dragStart.x, point.x);
+    const y = Math.min(dragStart.y, point.y);
+    const w = Math.abs(point.x - dragStart.x);
+    const h = Math.abs(point.y - dragStart.y);
+    setDraftCrop({ x, y, w, h });
+  };
+
+  const finalizeCrop = () => {
+    if (!draftCrop) {
+      setDragStart(null);
+      return;
+    }
+    if (draftCrop.w >= 0.03 && draftCrop.h >= 0.03) {
+      setCropRect(draftCrop);
+    }
+    setDraftCrop(null);
+    setDragStart(null);
   };
 
   // 检测颜色
@@ -109,12 +165,7 @@ function DetectPageContent() {
 
     setDetecting(true);
     try {
-      const crop = cropEnabled ? {
-        x: Math.max(0, Math.min((cropOffsetX - cropScale / 2) / 100, 1)),
-        y: Math.max(0, Math.min((cropOffsetY - cropScale / 2) / 100, 1)),
-        w: Math.max(0.1, Math.min(cropScale / 100, 1)),
-        h: Math.max(0.1, Math.min(cropScale / 100, 1))
-      } : undefined;
+      const crop = cropEnabled ? (cropRect || undefined) : undefined;
       const response = await detectColor(imageFiles, selectedColor.id, 60, crop);
       setResults(response.results);
     } catch (error) {
@@ -210,7 +261,15 @@ function DetectPageContent() {
             <div className="flex items-center justify-between rounded-xl border border-border px-3 py-2">
               <div className="text-sm font-medium">局部裁剪识色</div>
               <button
-                onClick={() => setCropEnabled((prev) => !prev)}
+                onClick={() => {
+                  const next = !cropEnabled;
+                  setCropEnabled(next);
+                  if (!next) {
+                    setCropRect(null);
+                    setDraftCrop(null);
+                    setDragStart(null);
+                  }
+                }}
                 className={cn(
                   "rounded-full px-3 py-1 text-xs transition-colors",
                   cropEnabled ? "bg-foreground text-background" : "bg-muted text-muted-foreground"
@@ -222,12 +281,39 @@ function DetectPageContent() {
 
             {cropEnabled && (
               <div className="rounded-xl border border-border p-3 space-y-3">
-                <div className="text-xs text-muted-foreground">裁剪大小</div>
-                <Slider value={[cropScale]} min={30} max={100} step={1} onValueChange={(v) => setCropScale(v[0])} />
-                <div className="text-xs text-muted-foreground">水平位置</div>
-                <Slider value={[cropOffsetX]} min={0} max={100} step={1} onValueChange={(v) => setCropOffsetX(v[0])} />
-                <div className="text-xs text-muted-foreground">垂直位置</div>
-                <Slider value={[cropOffsetY]} min={0} max={100} step={1} onValueChange={(v) => setCropOffsetY(v[0])} />
+                <div className="text-xs text-muted-foreground">在下方图片上按住鼠标拖动进行框选裁剪区域</div>
+                <div
+                  ref={cropBoardRef}
+                  onMouseDown={handleCropMouseDown}
+                  onMouseMove={handleCropMouseMove}
+                  onMouseUp={finalizeCrop}
+                  onMouseLeave={finalizeCrop}
+                  className="relative rounded-xl overflow-hidden bg-muted cursor-crosshair select-none"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={imagePreviews[0]}
+                    alt="裁剪参考图"
+                    className="w-full h-auto max-h-80 object-contain"
+                    draggable={false}
+                  />
+                  {(draftCrop || cropRect) && (
+                    <div
+                      className="absolute border-2 border-primary bg-primary/15"
+                      style={{
+                        left: `${((draftCrop || cropRect) as CropRect).x * 100}%`,
+                        top: `${((draftCrop || cropRect) as CropRect).y * 100}%`,
+                        width: `${((draftCrop || cropRect) as CropRect).w * 100}%`,
+                        height: `${((draftCrop || cropRect) as CropRect).h * 100}%`,
+                      }}
+                    />
+                  )}
+                </div>
+                {cropRect && (
+                  <div className="text-xs text-muted-foreground">
+                    已选区域：{Math.round(cropRect.w * 100)}% × {Math.round(cropRect.h * 100)}%
+                  </div>
+                )}
               </div>
             )}
 
@@ -240,18 +326,6 @@ function DetectPageContent() {
                   alt={`预览图片 ${index + 1}`}
                   className="w-full h-full object-cover"
                 />
-                {cropEnabled && (
-                  <div
-                    className="absolute border-2 border-primary/80 bg-primary/10"
-                    style={{
-                      left: `${Math.max(0, cropOffsetX - cropScale / 2)}%`,
-                      top: `${Math.max(0, cropOffsetY - cropScale / 2)}%`,
-                      width: `${cropScale}%`,
-                      height: `${cropScale}%`,
-                      transform: "translate(0, 0)"
-                    }}
-                  />
-                )}
                 <button
                   onClick={() => clearImage(index)}
                   className="absolute top-2 right-2 h-6 w-6 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center"
