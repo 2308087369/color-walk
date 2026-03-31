@@ -1,0 +1,23 @@
+[Unit]
+Description=vLLM Inference Service (Qwen3.5-0.8B)
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/gcl/my_project/color-city
+Environment="CUDA_VISIBLE_DEVICES=2"
+Environment="XDG_CACHE_HOME=/gcl/my_project/color-city/.cache"
+Environment="VLLM_CONFIG_ROOT=/gcl/my_project/color-city/.config/vllm"
+Environment="HF_HOME=/gcl/my_project/color-city/.cache/huggingface"
+# Use the local path to the downloaded model
+ExecStart=/gcl/my_project/color-city/.venv/bin/python -m vllm.entrypoints.openai.api_server \
+    --model /gcl/my_project/color-city/models_llm/Qwen/Qwen3___5-0___8B \
+    --host 127.0.0.1 \
+    --port 5130 \
+    --trust-remote-code \
+    --max-model-len 2048
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

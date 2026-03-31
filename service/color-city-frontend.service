@@ -1,0 +1,15 @@
+[Unit]
+Description=Color City Frontend Next.js Service
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/gcl/my_project/color-city/frontend
+ExecStart=/usr/local/bin/pnpm start -p 5125 -H 0.0.0.0
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+Environment=NEXT_PUBLIC_API_URL=http://180.213.184.159:5120
+
+[Install]
+WantedBy=multi-user.target
