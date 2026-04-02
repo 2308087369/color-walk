@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import func
 from sqlalchemy import func as sqla_func
@@ -7,6 +8,8 @@ import uuid
 from datetime import date
 import sys
 import os
+import io
+import unicodedata
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 import schemas
@@ -234,6 +237,183 @@ def get_public_color(
     if not color:
         raise HTTPException(status_code=404, detail="Color not found")
     return color
+
+@router.get("/public/photos/{photo_id}", response_model=schemas.PublicPhotoShareResponse)
+def get_public_photo_share(
+    photo_id: int,
+    db: Session = Depends(get_db)
+):
+    photo = db.query(model.UserPhoto).filter(model.UserPhoto.id == photo_id).first()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    color = db.query(model.Color).filter(model.Color.id == photo.color_id).first()
+    if not color:
+        raise HTTPException(status_code=404, detail="Associated color not found")
+
+    color_dict = color.__dict__.copy()
+    color_dict["photo_count"] = 0
+    return {
+        "id": photo.id,
+        "file_path": photo.file_path,
+        "match_percentage": photo.match_percentage,
+        "description": photo.description,
+        "created_at": photo.created_at,
+        "color": color_dict
+    }
+
+@router.get("/public/photos/{photo_id}/poster")
+def download_public_photo_poster(
+    photo_id: int,
+    db: Session = Depends(get_db)
+):
+    photo = db.query(model.UserPhoto).filter(model.UserPhoto.id == photo_id).first()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    color = db.query(model.Color).filter(model.Color.id == photo.color_id).first()
+    if not color:
+        raise HTTPException(status_code=404, detail="Associated color not found")
+
+    file_path_on_disk = os.path.join(os.path.dirname(os.path.dirname(__file__)), photo.file_path.lstrip('/'))
+    if not os.path.exists(file_path_on_disk):
+        raise HTTPException(status_code=404, detail="Image file not found on server")
+
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except Exception:
+        raise HTTPException(status_code=500, detail="Pillow is required for poster generation")
+
+    def load_font(size: int):
+        candidates = [
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ]
+        for path in candidates:
+            if os.path.exists(path):
+                return ImageFont.truetype(path, size=size)
+        return ImageFont.load_default()
+
+    def load_emoji_font(size: int):
+        candidates = [
+            "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+            "/usr/share/fonts/truetype/ancient-scripts/Symbola_hint.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ]
+        for path in candidates:
+            if os.path.exists(path):
+                return ImageFont.truetype(path, size=size)
+        return None
+
+    def is_emoji_char(ch: str) -> bool:
+        cp = ord(ch)
+        return (
+            0x1F300 <= cp <= 0x1FAFF
+            or 0x2600 <= cp <= 0x27BF
+            or 0xFE00 <= cp <= 0xFE0F
+            or cp == 0x200D
+        )
+
+    def display_units(text: str) -> int:
+        total = 0
+        for ch in text:
+            if is_emoji_char(ch):
+                total += 2
+            else:
+                total += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+        return total
+
+    def wrap_text_units(text: str, limit: int) -> List[str]:
+        lines: List[str] = []
+        current = ""
+        current_units = 0
+        for ch in text:
+            unit = 2 if is_emoji_char(ch) or unicodedata.east_asian_width(ch) in ("W", "F") else 1
+            if current and current_units + unit > limit:
+                lines.append(current)
+                current = ch
+                current_units = unit
+            else:
+                current += ch
+                current_units += unit
+        if current:
+            lines.append(current)
+        return lines
+
+    def draw_mixed_line(draw_ctx, x: int, y: int, text: str, base_font, emoji_font, fill: str):
+        cursor_x = x
+        idx = 0
+        while idx < len(text):
+            ch = text[idx]
+            use_emoji = emoji_font is not None and is_emoji_char(ch)
+            font = emoji_font if use_emoji else base_font
+            try:
+                if use_emoji:
+                    draw_ctx.text((cursor_x, y), ch, font=font, embedded_color=True)
+                else:
+                    draw_ctx.text((cursor_x, y), ch, fill=fill, font=font)
+            except TypeError:
+                draw_ctx.text((cursor_x, y), ch, fill=fill, font=font)
+            bbox = draw_ctx.textbbox((cursor_x, y), ch, font=font)
+            width = (bbox[2] - bbox[0]) if bbox else max(16, int(display_units(ch) * 18))
+            cursor_x += width
+            idx += 1
+
+    poster_w, poster_h = 1080, 1920
+    poster = Image.new("RGB", (poster_w, poster_h), "#0F1116")
+    draw = ImageDraw.Draw(poster)
+
+    hex_value = color.hex_code.upper()
+    color_rgb = tuple(int(hex_value.lstrip("#")[i:i+2], 16) for i in (0, 2, 4))
+    for i in range(420):
+        alpha = i / 420
+        mix = tuple(int((1 - alpha) * 16 + alpha * c) for c in color_rgb)
+        draw.rectangle([0, i, poster_w, i + 1], fill=mix)
+    draw.rectangle([0, 420, poster_w, poster_h], fill="#0F1116")
+
+    source = Image.open(file_path_on_disk).convert("RGB")
+    target_w, target_h = 920, 1050
+    source.thumbnail((target_w, target_h), Image.Resampling.LANCZOS)
+    card_x = (poster_w - target_w) // 2
+    card_y = 110
+    draw.rounded_rectangle([card_x - 14, card_y - 14, card_x + target_w + 14, card_y + target_h + 14], radius=36, fill="#1A1D24")
+    image_x = card_x + (target_w - source.width) // 2
+    image_y = card_y + (target_h - source.height) // 2
+    poster.paste(source, (image_x, image_y))
+
+    meta_top = 1240
+    draw.rounded_rectangle([64, meta_top, poster_w - 64, poster_h - 96], radius=36, fill="#171A22")
+    swatch_box = [108, meta_top + 54, 296, meta_top + 242]
+    draw.rounded_rectangle(swatch_box, radius=22, fill=color.hex_code)
+    draw.rounded_rectangle(swatch_box, radius=22, outline="#E8ECF2", width=2)
+
+    title_font = load_font(62)
+    sub_font = load_font(34)
+    body_font = load_font(36)
+    emoji_font = load_emoji_font(36)
+    brand_font = load_font(30)
+
+    draw.text((350, meta_top + 56), color.name, fill="#F5F7FA", font=title_font)
+    draw.text((350, meta_top + 138), color.hex_code.upper(), fill="#C7CDD8", font=sub_font)
+
+    description = (photo.description or f"这是我在色彩之城打卡的「{color.name}」瞬间。").strip()
+    wrapped = wrap_text_units(description, limit=20)[:4]
+    text_y = meta_top + 250
+    for line in wrapped:
+        draw_mixed_line(draw, 100, text_y, line, body_font, emoji_font, "#E7EBF2")
+        text_y += 54
+
+    footer = f"匹配度 {photo.match_percentage:.1f}%  ·  ColorWalk 色彩之城"
+    draw.text((100, poster_h - 150), footer, fill="#98A2B3", font=brand_font)
+
+    buffer = io.BytesIO()
+    poster.save(buffer, format="PNG")
+    buffer.seek(0)
+    filename = f"colorwalk-share-{photo.id}.png"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(buffer, media_type="image/png", headers=headers)
 
 @router.get("/daily", response_model=schemas.DailyRecommendationResponse)
 def get_daily_recommendation(

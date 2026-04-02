@@ -107,3 +107,10 @@ class AchievementResponse(BaseModel):
     total_achieved: int
     items: List[AchievementItem]
 
+class PublicPhotoShareResponse(BaseModel):
+    id: int
+    file_path: str
+    match_percentage: float
+    description: Optional[str] = None
+    created_at: datetime
+    color: ColorResponse

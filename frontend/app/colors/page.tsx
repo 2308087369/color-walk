@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { BottomNav } from "@/components/bottom-nav";
 import { ColorCard } from "@/components/color-card";
 import { getColors, getColorPhotos, deletePhoto, analyzePhoto, type Color, type UserPhoto } from "@/lib/api";
@@ -9,6 +10,7 @@ import { Search, X, Camera, Download, Trash2, Maximize2, Sparkles, RefreshCw } f
 import { cn } from "@/lib/utils";
 
 export default function ColorsPage() {
+  const router = useRouter();
   const [colors, setColors] = useState<Color[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -153,55 +155,8 @@ export default function ColorsPage() {
     }
   };
 
-  const handleGeneratePoster = async (photo: UserPhoto, color: Color | null) => {
-    if (!color) {
-      return;
-    }
-    const canvas = document.createElement("canvas");
-    canvas.width = 1080;
-    canvas.height = 1920;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      return;
-    }
-    ctx.fillStyle = "#0b0b0b";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    const imageUrl = `${process.env.NEXT_PUBLIC_API_URL || "http://180.213.184.159:5120"}${photo.file_path}`;
-    const image = new Image();
-    image.crossOrigin = "anonymous";
-    image.src = imageUrl;
-    await new Promise<void>((resolve, reject) => {
-      image.onload = () => resolve();
-      image.onerror = () => reject(new Error("图片加载失败"));
-    });
-
-    const imageAreaX = 80;
-    const imageAreaY = 140;
-    const imageAreaW = 920;
-    const imageAreaH = 1100;
-    ctx.drawImage(image, imageAreaX, imageAreaY, imageAreaW, imageAreaH);
-
-    ctx.fillStyle = color.hex_code;
-    ctx.fillRect(80, 1280, 920, 180);
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 54px sans-serif";
-    ctx.fillText(`${color.name} ${color.hex_code.toUpperCase()}`, 120, 1385);
-    ctx.font = "36px sans-serif";
-    const description = photo.description || "今日打卡完成，记录属于我的传统色瞬间。";
-    const lines = description.match(/.{1,18}/g) || [];
-    lines.slice(0, 3).forEach((line, idx) => {
-      ctx.fillText(line, 120, 1545 + idx * 52);
-    });
-    ctx.font = "30px sans-serif";
-    ctx.fillStyle = "#c8c8c8";
-    ctx.fillText("ColorWalk 色彩之城", 120, 1770);
-    const link = document.createElement("a");
-    link.href = canvas.toDataURL("image/png");
-    link.download = `poster-${color.name}-${photo.id}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleGoPosterShare = (photo: UserPhoto) => {
+    router.push(`/share/photo/${photo.id}`);
   };
 
   const handleDownloadPhoto = async (photoUrl: string, filename: string) => {
@@ -341,10 +296,10 @@ export default function ColorsPage() {
                         src={photoUrl}
                         alt="打卡照片"
                         className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                        onClick={() => setPreviewPhoto(photo)}
                       />
                       
-                      {/* 悬浮操作层 */}
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3 backdrop-blur-[2px]">
+                      <div className="absolute inset-0 hidden sm:flex bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity items-center justify-center gap-3 backdrop-blur-[2px]">
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
@@ -371,6 +326,39 @@ export default function ColorsPage() {
                             handleDeletePhoto(photo.id);
                           }}
                           className="h-8 w-8 rounded-full bg-red-500/80 hover:bg-red-500 flex items-center justify-center text-white transition-colors"
+                          title="删除记录"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+
+                      <div className="absolute top-2 left-2 right-2 flex sm:hidden items-center justify-center gap-2 z-10">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPreviewPhoto(photo);
+                          }}
+                          className="h-9 w-9 rounded-full bg-black/55 backdrop-blur-sm flex items-center justify-center text-white"
+                          title="全屏查看"
+                        >
+                          <Maximize2 className="h-4 w-4" />
+                        </button>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownloadPhoto(photoUrl, photo.file_path.split('/').pop() || 'photo.jpg');
+                          }}
+                          className="h-9 w-9 rounded-full bg-black/55 backdrop-blur-sm flex items-center justify-center text-white"
+                          title="下载图片"
+                        >
+                          <Download className="h-4 w-4" />
+                        </button>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeletePhoto(photo.id);
+                          }}
+                          className="h-9 w-9 rounded-full bg-red-500/85 backdrop-blur-sm flex items-center justify-center text-white"
                           title="删除记录"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -408,11 +396,11 @@ export default function ColorsPage() {
       {/* Fullscreen Image Preview */}
       {previewPhoto && (
         <div 
-          className="fixed inset-0 z-[60] bg-black/95 flex items-center justify-center animate-in fade-in duration-200"
+          className="fixed inset-0 z-[60] bg-black/95 animate-in fade-in duration-200"
           onClick={() => setPreviewPhoto(null)}
         >
           <button 
-            className="absolute top-6 right-6 p-3 bg-white/10 rounded-full hover:bg-white/20 transition-colors text-white"
+            className="absolute top-4 right-4 sm:top-6 sm:right-6 p-3 bg-white/10 rounded-full hover:bg-white/20 transition-colors text-white z-20"
             onClick={(e) => {
               e.stopPropagation();
               setPreviewPhoto(null);
@@ -421,41 +409,43 @@ export default function ColorsPage() {
             <X className="h-6 w-6" />
           </button>
           
-          <div className="relative max-w-[90vw] max-h-[85vh]">
+          <div className="relative h-full w-full flex flex-col items-center justify-start sm:justify-center px-3 sm:px-6 pt-14 sm:pt-8 pb-[34vh] sm:pb-8">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img 
               src={`${process.env.NEXT_PUBLIC_API_URL || 'http://180.213.184.159:5120'}${previewPhoto.file_path}`}
               alt="全屏预览"
-              className="max-w-full max-h-[75vh] object-contain rounded-sm"
+              className="max-w-full max-h-[58vh] sm:max-h-[75vh] object-contain rounded-md"
               onClick={(e) => e.stopPropagation()}
             />
-            
-            {/* AI Description Panel */}
+          </div>
+
+          <div 
+            className="absolute inset-x-0 bottom-0 sm:bottom-5 sm:px-6"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div 
-              className="absolute -bottom-6 left-0 right-0 translate-y-full"
-              onClick={(e) => e.stopPropagation()}
+              className="bg-black/75 backdrop-blur-md border border-white/10 rounded-t-3xl sm:rounded-2xl p-4 sm:p-5 flex flex-col gap-3 sm:max-w-2xl sm:mx-auto shadow-2xl max-h-[34vh] sm:max-h-[40vh] overflow-y-auto"
             >
-              <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-2xl p-4 flex flex-col gap-3 max-w-2xl mx-auto shadow-2xl">
                 {previewPhoto.description ? (
                   <>
-                    <p className="text-white/90 text-sm leading-relaxed text-pretty">
+                    <p className="text-white/90 text-sm leading-relaxed text-pretty break-words">
                       {previewPhoto.description}
                     </p>
-                    <div className="flex items-center justify-between mt-1">
-                      <div className="text-white/50 text-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mt-1 gap-3">
+                      <div className="text-white/60 text-xs">
                         匹配度 {previewPhoto.match_percentage.toFixed(1)}% · 打卡于 {new Date(previewPhoto.created_at).toLocaleString()} · {previewPhoto.description_status === "pending" ? "描述生成中" : "描述已完成"}
                       </div>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
                         <button
-                          onClick={() => handleGeneratePoster(previewPhoto, selectedColor)}
-                          className="text-xs flex items-center gap-1.5 text-white/70 hover:text-white transition-colors"
+                          onClick={() => handleGoPosterShare(previewPhoto)}
+                          className="text-xs flex items-center justify-center gap-1.5 text-white/90 bg-white/10 hover:bg-white/20 transition-colors px-3 py-2 rounded-xl"
                         >
                           海报分享
                         </button>
                         <button
                           onClick={() => handleAnalyzePhoto(previewPhoto.id)}
                           disabled={analyzingPhotoId === previewPhoto.id}
-                          className="text-xs flex items-center gap-1.5 text-white/70 hover:text-white transition-colors disabled:opacity-50"
+                          className="text-xs flex items-center justify-center gap-1.5 text-white/90 bg-white/10 hover:bg-white/20 transition-colors disabled:opacity-50 px-3 py-2 rounded-xl"
                         >
                           {analyzingPhotoId === previewPhoto.id ? (
                             <>
@@ -473,14 +463,14 @@ export default function ColorsPage() {
                     </div>
                   </>
                 ) : (
-                  <div className="flex items-center justify-between">
-                    <div className="text-white/50 text-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="text-white/60 text-sm">
                       匹配度 {previewPhoto.match_percentage.toFixed(1)}% · {previewPhoto.description_status === "pending" ? "AI 描述生成中..." : "尚未生成 AI 描述"}
                     </div>
                     <button
                       onClick={() => handleAnalyzePhoto(previewPhoto.id)}
                       disabled={analyzingPhotoId === previewPhoto.id}
-                      className="text-sm flex items-center gap-2 bg-white/10 hover:bg-white/20 px-4 py-2 rounded-xl text-white transition-colors disabled:opacity-50"
+                      className="text-sm flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 px-4 py-2 rounded-xl text-white transition-colors disabled:opacity-50 w-full sm:w-auto"
                     >
                       {analyzingPhotoId === previewPhoto.id ? (
                         <>
@@ -496,7 +486,6 @@ export default function ColorsPage() {
                     </button>
                   </div>
                 )}
-              </div>
             </div>
           </div>
         </div>
