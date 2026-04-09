@@ -9,7 +9,7 @@ ExecStart=/usr/local/bin/pnpm start -p 5125 -H 0.0.0.0
 Restart=always
 RestartSec=3
 Environment=NODE_ENV=production
-Environment=NEXT_PUBLIC_API_URL=http://180.213.184.159:5120
+Environment=NEXT_PUBLIC_API_URL=/api
 
 [Install]
 WantedBy=multi-user.target

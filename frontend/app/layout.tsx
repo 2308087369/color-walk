@@ -1,13 +1,5 @@
 import type { Metadata, Viewport } from 'next'
-import { Noto_Sans_SC } from 'next/font/google'
-import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
-
-const notoSansSC = Noto_Sans_SC({ 
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "700"],
-  variable: "--font-noto-sans-sc"
-});
 
 export const metadata: Metadata = {
   title: '色彩漫步 - Color City Walk',
@@ -47,9 +39,22 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body className={`${notoSansSC.variable} font-sans antialiased`}>
-        {children}
-        <Analytics />
+      <body className="font-sans antialiased min-h-screen flex flex-col pb-24 relative">
+        <main className="flex-1">
+          {children}
+        </main>
+        <div className="fixed bottom-0 w-full z-40 bg-background/80 backdrop-blur-sm pb-16 pt-2 pointer-events-none">
+          <div className="text-center text-[10px] text-muted-foreground/60 pointer-events-auto">
+            <a 
+              href="https://beian.miit.gov.cn/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="hover:text-foreground transition-colors"
+            >
+              渝ICP备2026006056号
+            </a>
+          </div>
+        </div>
       </body>
     </html>
   )

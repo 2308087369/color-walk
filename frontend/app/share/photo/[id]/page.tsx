@@ -19,13 +19,15 @@ export default function PhotoSharePage() {
 
   const photoUrl = useMemo(() => {
     if (!data) return "";
-    const base = process.env.NEXT_PUBLIC_API_URL || "http://180.213.184.159:5120";
+    // const base = process.env.NEXT_PUBLIC_API_URL || "http://180.213.184.159:5120";
+    const base = process.env.NEXT_PUBLIC_API_URL || "/api";
     return `${base}${data.file_path}`;
   }, [data]);
 
   const posterDownloadUrl = useMemo(() => {
     if (!data) return "";
-    const base = process.env.NEXT_PUBLIC_API_URL || "http://180.213.184.159:5120";
+    // const base = process.env.NEXT_PUBLIC_API_URL || "http://180.213.184.159:5120";
+    const base = process.env.NEXT_PUBLIC_API_URL || "/api";
     return `${base}/colors/public/photos/${data.id}/poster`;
   }, [data]);
 
