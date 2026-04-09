@@ -288,7 +288,7 @@ export default function ColorsPage() {
             ) : colorPhotos.length > 0 ? (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {colorPhotos.map(photo => {
-                  // const photoUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://180.213.184.159:5120'}${photo.file_path}`;
+                  // const photoUrl = `${process.env.NEXT_PUBLIC_API_URL || '/api'}${photo.file_path}`;
                   const photoUrl = `${process.env.NEXT_PUBLIC_API_URL || '/api'}${photo.file_path}`;
                   return (
                     <div key={photo.id} className="group relative aspect-square rounded-xl overflow-hidden bg-muted border">
@@ -413,7 +413,7 @@ export default function ColorsPage() {
           <div className="relative h-full w-full flex flex-col items-center justify-start sm:justify-center px-3 sm:px-6 pt-14 sm:pt-8 pb-[34vh] sm:pb-8">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img 
-              // src={`${process.env.NEXT_PUBLIC_API_URL || 'http://180.213.184.159:5120'}${previewPhoto.file_path}`}
+              // src={`${process.env.NEXT_PUBLIC_API_URL || '/api'}${previewPhoto.file_path}`}
               src={`${process.env.NEXT_PUBLIC_API_URL || '/api'}${previewPhoto.file_path}`}
               alt="全屏预览"
               className="max-w-full max-h-[58vh] sm:max-h-[75vh] object-contain rounded-md"

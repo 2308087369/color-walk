@@ -16,7 +16,11 @@ import schemas
 from data import model
 from data.database import get_db
 
-SECRET_KEY = "super_secret_key_for_color_city"
+from dotenv import load_dotenv
+import os
+load_dotenv()
+
+SECRET_KEY = os.getenv("SECRET_KEY", "super_secret_key_for_color_city")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
