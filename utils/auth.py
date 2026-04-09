@@ -40,8 +40,17 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 def get_user_by_username(db: Session, username: str):
+    # Handle pure 11-digit phone numbers by testing with +86 prefix
+    potential_phone = username
+    if username.isdigit() and len(username) == 11:
+        potential_phone = f"+86 {username}"
+        
     return db.query(model.User).filter(
-        or_(model.User.username == username, model.User.phone == username)
+        or_(
+            model.User.username == username, 
+            model.User.phone == username,
+            model.User.phone == potential_phone
+        )
     ).first()
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
