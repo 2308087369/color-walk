@@ -6,6 +6,7 @@ from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 import sys
 import os
@@ -39,7 +40,9 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 def get_user_by_username(db: Session, username: str):
-    return db.query(model.User).filter(model.User.username == username).first()
+    return db.query(model.User).filter(
+        or_(model.User.username == username, model.User.phone == username)
+    ).first()
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(

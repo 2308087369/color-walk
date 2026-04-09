@@ -24,53 +24,79 @@ export default function LoginPage() {
       localStorage.setItem("token", access_token);
       router.push("/"); // 登录成功后跳转到首页
     } catch (err: any) {
-      setError(err.message || "登录失败，请检查用户名或密码");
+      setError(err.message || "登录失败，请检查账户或密码");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-background p-6">
-      <div className="w-full max-w-sm space-y-8">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold">欢迎回来</h1>
-          <p className="text-muted-foreground mt-2">请登录您的账户</p>
+    <main className="min-h-screen flex items-center justify-center bg-[#faf7f2] dark:bg-zinc-950 p-6 relative overflow-hidden">
+      {/* 背景水墨纹理/装饰 */}
+      <div className="absolute top-0 left-0 w-full h-40 bg-gradient-to-b from-[#8f4b2e]/10 to-transparent pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-[#c93756]/5 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-[20%] left-[-10%] w-64 h-64 bg-[#b35c44]/5 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="w-full max-w-sm space-y-8 relative z-10 animate-in fade-in slide-in-from-bottom-8 duration-1000">
+        <div className="text-center space-y-3">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-tr from-[#c93756]/20 to-[#8f4b2e]/10 mb-2 shadow-inner border border-[#c93756]/10">
+            <span className="text-2xl font-serif text-[#c93756]">色</span>
+          </div>
+          <h1 className="text-3xl font-bold tracking-widest text-[#8f4b2e] dark:text-[#d4a373] font-serif">
+            色彩之城
+          </h1>
+          <p className="text-muted-foreground text-sm tracking-widest opacity-80">
+            寻觅华夏之美 · 记录城市漫步
+          </p>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div className="space-y-2">
-            <Input
-              type="text"
-              placeholder="用户名"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Input
-              type="password"
-              placeholder="密码"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+        <form onSubmit={handleLogin} className="space-y-5 bg-background/50 dark:bg-background/80 backdrop-blur-xl p-8 rounded-2xl shadow-sm border border-border/50">
+          <div className="space-y-4">
+            <div className="space-y-2 relative group">
+              <Input
+                type="text"
+                placeholder="用户名 / 手机号"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+                className="h-12 bg-transparent border-b-2 border-x-0 border-t-0 rounded-none focus-visible:ring-0 focus-visible:border-[#c93756] transition-colors px-2 text-base"
+              />
+            </div>
+            <div className="space-y-2 relative group">
+              <Input
+                type="password"
+                placeholder="密码"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="h-12 bg-transparent border-b-2 border-x-0 border-t-0 rounded-none focus-visible:ring-0 focus-visible:border-[#c93756] transition-colors px-2 text-base"
+              />
+            </div>
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && (
+            <p className="text-sm text-[#c93756] animate-in fade-in slide-in-from-left-2 duration-300">
+              {error}
+            </p>
+          )}
 
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "登录中..." : "登录"}
-          </Button>
+          <div className="pt-4">
+            <Button 
+              type="submit" 
+              className="w-full h-12 text-base tracking-widest bg-gradient-to-r from-[#8f4b2e] to-[#c93756] hover:from-[#7a3f26] hover:to-[#b32f4a] text-white rounded-xl shadow-md transition-all hover:scale-[1.02]" 
+              disabled={loading}
+            >
+              {loading ? "入城中..." : "入城"}
+            </Button>
+          </div>
+
+          <div className="text-center text-sm text-muted-foreground pt-4 border-t border-border/40">
+            未有通关文牒？{" "}
+            <Link href="/register" className="text-[#c93756] hover:text-[#8f4b2e] transition-colors hover:underline underline-offset-4">
+              缔结契约
+            </Link>
+          </div>
         </form>
-
-        <div className="text-center text-sm text-muted-foreground">
-          还没有账户？{" "}
-          <Link href="/register" className="text-primary hover:underline">
-            立即注册
-          </Link>
-        </div>
       </div>
     </main>
   );

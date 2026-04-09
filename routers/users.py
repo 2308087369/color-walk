@@ -24,7 +24,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     if db_user:
         raise HTTPException(status_code=400, detail="Username already registered")
     hashed_password = auth.get_password_hash(user.password)
-    new_user = model.User(username=user.username, hashed_password=hashed_password)
+    new_user = model.User(username=user.username, hashed_password=hashed_password, phone=user.phone)
     db.add(new_user)
     db.commit()
     db.refresh(new_user)

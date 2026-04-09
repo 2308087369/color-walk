@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from 'next'
+import { Toaster } from "@/components/ui/toaster"
+import { ReportDialog } from "@/components/report-dialog"
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -44,17 +46,19 @@ export default function RootLayout({
           {children}
         </main>
         <div className="fixed bottom-0 w-full z-40 bg-background/80 backdrop-blur-sm pb-16 pt-2 pointer-events-none">
-          <div className="text-center text-[10px] text-muted-foreground/60 pointer-events-auto">
+          <div className="text-center text-[10px] text-muted-foreground/60 pointer-events-auto flex justify-center items-center">
             <a 
               href="https://beian.miit.gov.cn/" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="hover:text-foreground transition-colors"
+              className="hover:text-foreground transition-colors underline-offset-4 hover:underline"
             >
               渝ICP备2026006056号
             </a>
+            <ReportDialog />
           </div>
         </div>
+        <Toaster />
       </body>
     </html>
   )
